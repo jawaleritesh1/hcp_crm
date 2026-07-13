@@ -1,0 +1,30 @@
+# Virtual Environments & Python Cache
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Node Modules & Frontend Builds
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# IDEs & System Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
