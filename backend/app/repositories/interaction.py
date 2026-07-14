@@ -8,9 +8,14 @@ class CRUDInteraction(CRUDBase[Interaction]):
     def create_with_followups_and_products(self, db: Session, *, obj_in: Dict[str, Any], product_ids: List[UUID], follow_ups: List[Dict[str, Any]]) -> Interaction:
         db_obj = Interaction(
             hcp_id=obj_in["hcp_id"],
+            interaction_type=obj_in.get("interaction_type"),
             interaction_date=obj_in["interaction_date"],
+            interaction_time=obj_in.get("interaction_time"),
+            attendees=obj_in.get("attendees"),
+            topics_discussed=obj_in.get("topics_discussed"),
             sentiment=obj_in.get("sentiment"),
-            summary=obj_in.get("summary"),
+            outcomes=obj_in.get("outcomes"),
+            follow_ups_text=obj_in.get("follow_ups_text"),
             status=obj_in.get("status", "COMPLETED")
         )
         

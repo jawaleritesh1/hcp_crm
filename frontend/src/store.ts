@@ -16,20 +16,32 @@ export interface FollowUpItem {
 
 export interface InteractionFormState {
   hcp: EntityOption | null;
+  interactionType: string;
   interactionDate: string;
+  interactionTime: string;
+  attendees: string;
+  topicsDiscussed: string;
+  materialsShared: EntityOption[];
+  samplesDistributed: EntityOption[];
   sentiment: string;
-  summary: string;
-  products: EntityOption[];
-  followUps: FollowUpItem[];
+  outcomes: string;
+  followUpsText: string;
+  aiSuggestedFollowUps: FollowUpItem[];
 }
 
 const initialFormState: InteractionFormState = {
   hcp: null,
+  interactionType: 'Meeting',
   interactionDate: '',
+  interactionTime: '',
+  attendees: '',
+  topicsDiscussed: '',
+  materialsShared: [],
+  samplesDistributed: [],
   sentiment: '',
-  summary: '',
-  products: [],
-  followUps: [],
+  outcomes: '',
+  followUpsText: '',
+  aiSuggestedFollowUps: [],
 };
 
 export const formSlice = createSlice({
@@ -44,14 +56,32 @@ export const formSlice = createSlice({
 });
 
 // Chat Slice
+export interface HCPCandidateItem {
+  id: string;
+  name: string;
+  specialty: string;
+}
+
+export interface UpdatedFieldInfo {
+  field: string;
+  label: string;
+  oldValue: string;
+  newValue: string;
+}
+
 export interface ChatMessage {
   id: string;
   sender: 'user' | 'ai';
   text: string;
   timestamp: string;
   isExtractionPreview?: boolean;
+  isEditSummary?: boolean;
   extractionData?: Partial<InteractionFormState>;
   rawBackendData?: any;
+  isAccepted?: boolean;
+  hcpCandidates?: HCPCandidateItem[];
+  candidateSelected?: boolean;
+  updatedFields?: UpdatedFieldInfo[];
 }
 
 export interface ChatState {
@@ -83,11 +113,23 @@ export const chatSlice = createSlice({
     setProcessing: (state, action: PayloadAction<boolean>) => {
       state.isProcessing = action.payload;
     },
+    acceptDuplicateExtraction: (state, action: PayloadAction<string>) => {
+      const msg = state.messages.find(m => m.id === action.payload);
+      if (msg) {
+        msg.isAccepted = true;
+      }
+    },
+    markCandidateSelected: (state, action: PayloadAction<string>) => {
+      const msg = state.messages.find(m => m.id === action.payload);
+      if (msg) {
+        msg.candidateSelected = true;
+      }
+    },
   },
 });
 
 export const { updateForm, resetForm } = formSlice.actions;
-export const { addMessage, setProcessing } = chatSlice.actions;
+export const { addMessage, setProcessing, acceptDuplicateExtraction, markCandidateSelected } = chatSlice.actions;
 
 export const store = configureStore({
   reducer: {

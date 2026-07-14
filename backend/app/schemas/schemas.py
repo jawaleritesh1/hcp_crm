@@ -60,6 +60,13 @@ class EntityWithConfidence(BaseModel):
     id: Optional[str] = None
     name: str
     confidence: float
+    db_search_status: Optional[str] = None
+    pending_name: Optional[str] = None
+
+class HCPCandidate(BaseModel):
+    id: str
+    name: str
+    specialty: str
 
 class NextBestAction(BaseModel):
     action: str
@@ -86,10 +93,15 @@ class ExtractedFollowUp(BaseModel):
 
 class ExtractedData(BaseModel):
     hcp: Optional[EntityWithConfidence] = None
-    products: List[EntityWithConfidence] = []
-    sentiment: Optional[ConfidenceValue] = None
-    summary: Optional[str] = None
+    interaction_type: Optional[str] = None
     interaction_date: Optional[str] = None
+    interaction_time: Optional[str] = None
+    attendees: Optional[str] = None
+    topics_discussed: Optional[str] = None
+    materials_shared: List[EntityWithConfidence] = []
+    samples_distributed: List[EntityWithConfidence] = []
+    sentiment: Optional[ConfidenceValue] = None
+    outcomes: Optional[str] = None
     follow_ups: List[ExtractedFollowUp] = []
     next_best_action: Optional[NextBestAction] = None
     engagement: Optional[HCPEngagement] = None
@@ -100,32 +112,45 @@ class MetaInfo(BaseModel):
     processing_time_ms: int
     llm_provider: str
     llm_model: str
+    execution_trace: List[str] = []
 
 class AIProcessResponse(BaseModel):
     meta: MetaInfo
     explanation: str
-    extracted_data: ExtractedData
+    hcp_candidates: List[HCPCandidate] = []
+    extracted_data: Optional[ExtractedData] = None
 
 # Interaction Schemas
 class InteractionCreate(BaseModel):
     hcp_id: UUID
+    interaction_type: Optional[str] = None
     interaction_date: datetime
+    interaction_time: Optional[str] = None
+    attendees: Optional[str] = None
+    topics_discussed: Optional[str] = None
     sentiment: Optional[str] = None
-    summary: Optional[str] = None
+    outcomes: Optional[str] = None
     status: str = "COMPLETED"
-    product_ids: List[UUID] = []
-    follow_ups: List[FollowUpCreate] = []
+    materials_shared: List[UUID] = []
+    samples_distributed: List[UUID] = []
+    follow_ups_text: Optional[str] = None
 
 class InteractionResponse(BaseModel):
     id: UUID
     hcp_id: UUID
+    interaction_type: Optional[str]
     interaction_date: datetime
+    interaction_time: Optional[str]
+    attendees: Optional[str]
+    topics_discussed: Optional[str]
     sentiment: Optional[str]
-    summary: Optional[str]
+    outcomes: Optional[str]
+    follow_ups_text: Optional[str]
     status: str
     created_at: datetime
     updated_at: datetime
-    products: List[ProductResponse] = []
+    materials: List[ProductResponse] = []
+    samples: List[ProductResponse] = []
     follow_ups: List[FollowUpResponse] = []
 
     class Config:

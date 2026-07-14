@@ -1,5 +1,5 @@
 from langchain_core.tools import tool
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, Field
 import json
 from datetime import datetime, timedelta
@@ -112,7 +112,13 @@ def generate_followup_tool(transcript: str) -> str:
 # ----------------------------------------------------
 class LogInteractionPayload(BaseModel):
     hcp_name: str
-    products: List[str]
+    interaction_type: Optional[str] = Field(description="E.g., Meeting, Phone Call, Email")
+    interaction_time: Optional[str] = Field(description="Time of the interaction in HH:MM format")
+    attendees: Optional[str] = Field(description="Names of people attending")
+    materials_shared: List[str] = Field(description="List of presentation or printed materials shared")
+    samples_distributed: List[str] = Field(description="List of physical product samples distributed")
+    topics_discussed: Optional[str] = Field(description="Key topics discussed")
+    outcomes: Optional[str] = Field(description="Key outcomes or agreements")
     sentiment: str = Field(description="Positive, Neutral, or Negative")
     interaction_date: str = Field(description="The date of the interaction in YYYY-MM-DD format")
 
@@ -127,12 +133,18 @@ def log_interaction_tool(transcript: str) -> str:
     """
     try:
         today = datetime.utcnow().strftime("%Y-%m-%d")
-        prompt = f"Extract the HCP name, products discussed, overall sentiment, and interaction date from this interaction: {transcript}. Today's date is {today}. If the interaction mentions 'yesterday', 'today', 'on 5 July', etc., resolve it to the exact YYYY-MM-DD date. If no date is mentioned, default to {today}."
+        prompt = f"Extract the HCP name, interaction type, time, attendees, materials shared, samples distributed, topics discussed, outcomes, overall sentiment, and interaction date from this interaction: {transcript}. Today's date is {today}. If the interaction mentions 'yesterday', 'today', 'on 5 July', etc., resolve it to the exact YYYY-MM-DD date. If no date is mentioned, default to {today}. Differentiate between sharing digital/printed materials vs physically dropping off samples."
         result = groq_service.extract_structured_data(prompt, LogInteractionPayload)
         
         payload = {
             "hcp": {"name": result.hcp_name},
-            "products": [{"name": p} for p in result.products],
+            "interaction_type": result.interaction_type,
+            "interaction_time": result.interaction_time,
+            "attendees": result.attendees,
+            "topics_discussed": result.topics_discussed,
+            "materials_shared": [{"name": p} for p in result.materials_shared],
+            "samples_distributed": [{"name": p} for p in result.samples_distributed],
+            "outcomes": result.outcomes,
             "sentiment": result.sentiment,
             "interaction_date": result.interaction_date
         }
@@ -143,26 +155,67 @@ def log_interaction_tool(transcript: str) -> str:
 # ----------------------------------------------------
 # 6. Edit Interaction Tool (Transformation Only)
 # ----------------------------------------------------
+class ExtractedFollowUpPayload(BaseModel):
+    action_item: str
+    priority: str
+    due_date: Optional[str] = None
+    reason: Optional[str] = None
+
+class FullInteractionPayload(BaseModel):
+    hcp_name: str
+    interaction_type: Optional[str]
+    interaction_time: Optional[str]
+    attendees: Optional[str]
+    topics_discussed: Optional[str]
+    materials_shared: List[str]
+    samples_distributed: List[str]
+    outcomes: Optional[str]
+    sentiment: str = Field(description="Positive, Neutral, or Negative")
+    interaction_date: str = Field(description="The date of the interaction in YYYY-MM-DD format")
+    follow_ups: List[ExtractedFollowUpPayload] = Field(default_factory=list)
+
 class EditInteractionInput(BaseModel):
     current_payload: str = Field(..., description="The JSON string of the current interaction payload.")
     correction: str = Field(..., description="The user's natural language instruction for how to correct the payload.")
+    chat_history: Optional[str] = Field(None, description="The recent conversation history to resolve choices (e.g. Choose 1) or context.")
 
 @tool("edit_interaction_tool", args_schema=EditInteractionInput, return_direct=False)
-def edit_interaction_tool(current_payload: str, correction: str) -> str:
+def edit_interaction_tool(current_payload: str, correction: str, chat_history: Optional[str] = None) -> str:
     """
     Applies user corrections to an existing interaction payload.
     DOES NOT update the database. Returns the updated JSON payload.
     """
     try:
         today = datetime.utcnow().strftime("%Y-%m-%d")
-        prompt = f"Given this current interaction payload:\n{current_payload}\n\nApply this correction: '{correction}'\nOutput the fully updated payload. If the correction affects the date, resolve it to YYYY-MM-DD. Today is {today}."
-        result = groq_service.extract_structured_data(prompt, LogInteractionPayload)
+        history_context = f"Conversation Context (very important to resolve ambiguous requests like 'Choose 1' or 'Create new HCP'):\n{chat_history}\n\n" if chat_history else ""
+        prompt = (
+            f"You are a strict CRM merging tool. You receive a current JSON payload representing the state of an interaction:\n"
+            f"{current_payload}\n\n"
+            f"{history_context}"
+            f"A user wants to apply the following correction: '{correction}'\n"
+            f"Apply the correction exactly as requested. Today is {today}.\n"
+            f"CRITICAL RULES:\n"
+            f"1. Perform a TRUE merge. Preserve all existing fields, values, materials, samples, sentiment, outcomes, and follow-up items UNLESS the correction explicitly asks to change them.\n"
+            f"2. Modify ONLY the requested fields.\n"
+            f"3. Never erase or overwrite unrelated information.\n"
+            f"4. If a date is changed, format it as YYYY-MM-DD.\n"
+            f"5. Return the full, updated payload conforming to the FullInteractionPayload schema.\n"
+            f"6. TYPE CONSTRAINTS: 'materials_shared' and 'samples_distributed' must be flat lists of strings (e.g. [\"CardioPlus\"]), NOT list of dicts. 'sentiment' must be a single string (e.g. \"Positive\"), NOT a dict."
+        )
+        result = groq_service.extract_structured_data(prompt, FullInteractionPayload)
         
         updated_payload = {
             "hcp": {"name": result.hcp_name},
-            "products": [{"name": p} for p in result.products],
+            "interaction_type": result.interaction_type,
+            "interaction_time": result.interaction_time,
+            "attendees": result.attendees,
+            "topics_discussed": result.topics_discussed,
+            "materials_shared": [{"name": p} for p in result.materials_shared],
+            "samples_distributed": [{"name": p} for p in result.samples_distributed],
+            "outcomes": result.outcomes,
             "sentiment": result.sentiment,
-            "interaction_date": result.interaction_date
+            "interaction_date": result.interaction_date,
+            "follow_ups": [fu.model_dump() for fu in result.follow_ups]
         }
         return json.dumps({"status": "success", "payload": updated_payload})
     except Exception as e:
@@ -179,7 +232,13 @@ def next_best_action_tool(transcript: str) -> str:
     """Analyze the extracted interaction and recommend the next sales action."""
     try:
         from app.schemas.schemas import NextBestAction
-        prompt = f"Analyze the interaction and recommend the next best sales action: {transcript}"
+        prompt = (
+            f"Analyze the interaction transcript to determine the Next Best Action for the sales rep: {transcript}\n"
+            f"CRITICAL RECOMMENDATION RULES:\n"
+            f"1. Recommending action MUST be dynamic and tailored to the context (e.g. doctor interest, products discussed, sentiment, materials/samples requested, objections raised).\n"
+            f"2. DO NOT return generic static recommendations.\n"
+            f"3. Output a concrete actionable step (e.g., 'Send latest clinical evidence', 'Deliver requested samples', 'Schedule revisit after 14 days', 'Arrange product presentation') and a business rationale justifying it."
+        )
         result = groq_service.extract_structured_data(prompt, NextBestAction)
         return json.dumps({"status": "success", "action": result.action, "rationale": result.rationale})
     except Exception as e:
@@ -196,7 +255,18 @@ def hcp_engagement_tool(transcript: str) -> str:
     """Analyze the interaction and calculate engagement metrics."""
     try:
         from app.schemas.schemas import HCPEngagement
-        prompt = f"Analyze this interaction and calculate Engagement Score (0-100), Interest Level (Low, Medium, High), Prescription Readiness, and Recommended Visit Frequency: {transcript}"
+        prompt = (
+            f"Analyze this interaction transcript and calculate engagement metrics: {transcript}\n"
+            f"CRITICAL SCORING RUBRIC:\n"
+            f"1. Base score (0-100) must be dynamically calculated based on:\n"
+            f"   - Overall sentiment (Positive = +30, Neutral = +15, Negative = 0)\n"
+            f"   - Interest in products discussed (High = +20, Medium = +10, Low = 0)\n"
+            f"   - Objections raised (Objections = -15, No objections = +10)\n"
+            f"   - Action requests: requested samples (+15), requested literature/evidence (+15)\n"
+            f"   - Commitments: agreed to revisit or follow-up (+15)\n"
+            f"2. Ensure the Engagement Score is dynamic and calculated strictly according to these points. Never return a static score (like 80).\n"
+            f"3. Return the quantitative details: score, interest_level (Low, Medium, High), prescription_readiness, and recommended visit frequency."
+        )
         result = groq_service.extract_structured_data(prompt, HCPEngagement)
         return json.dumps({
             "status": "success", 
@@ -235,13 +305,18 @@ def duplicate_interaction_tool(hcp_id: str, interaction_date: str, transcript: s
         
         candidates = []
         for i in existing_interactions:
-            # interaction_date might be string or datetime in sqlite, ensure safe compare
             idate = i.interaction_date if isinstance(i.interaction_date, datetime) else datetime.strptime(str(i.interaction_date)[:10], "%Y-%m-%d")
             if start_date.date() <= idate.date() <= end_date.date():
                 candidates.append({"id": str(i.id), "date": str(idate.date()), "summary": i.summary})
                 
         if not candidates:
-            return json.dumps({"status": "success", "duplicate_found": False, "confidence_score": 0.0, "matched_interaction_id": None, "recommendation": "No duplicates found"})
+            return json.dumps({
+                "status": "success", 
+                "duplicate_found": False, 
+                "confidence_score": 0.0, 
+                "matched_interaction_id": None, 
+                "recommendation": "No duplicate interaction detected."
+            })
             
         candidates_str = json.dumps(candidates)
         prompt = f"Given these existing interactions for the HCP: {candidates_str}, compare them with this new interaction transcript: {transcript}. Is the new interaction likely a duplicate of one of the existing ones? Provide a duplicate_found boolean, a confidence score (0-1), the matched_interaction_id (if any), and a recommendation."
@@ -275,7 +350,15 @@ class PriorityRecommendationOutput(BaseModel):
 def priority_recommendation_tool(action_item: str) -> str:
     """Determine the priority of follow-up actions using AI reasoning."""
     try:
-        prompt = f"Determine the priority (Critical, High, Medium, Low) of this follow-up action: '{action_item}'. Provide the priority, a confidence score (0-1), and the business reason."
+        prompt = (
+            f"Determine the priority (Critical, High, Medium, Low) of this follow-up action: '{action_item}'\n"
+            f"CRITICAL BUSINESS LOGIC RULES:\n"
+            f"1. Assign 'Critical' if the doctor requires urgent safety or compliance resolution.\n"
+            f"2. Assign 'High' if the doctor requested samples or clinical evidence/data/literature.\n"
+            f"3. Assign 'Medium' if it is a standard follow-up schedule, a revisit request, or a general product question.\n"
+            f"4. Assign 'Low' if there is no immediate action requested, or it is a routine login.\n"
+            f"5. Provide a clear, short business reason justification for the assigned priority."
+        )
         result = groq_service.extract_structured_data(prompt, PriorityRecommendationOutput)
         
         return json.dumps({

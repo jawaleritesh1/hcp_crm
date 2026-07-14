@@ -17,6 +17,10 @@ class CRMService:
         return hcp_repo.search_by_name(db, query=query)
 
     @staticmethod
+    def get_hcps(db: Session, skip: int = 0, limit: int = 100):
+        return hcp_repo.get_multi(db, skip=skip, limit=limit)
+
+    @staticmethod
     def search_products(db: Session, query: str):
         if not query:
             return []
@@ -30,19 +34,19 @@ class CRMService:
             raise HTTPException(status_code=404, detail="HCP not found")
         
         # Validate all products exist
-        for prod_id in obj_in.product_ids:
+        all_product_ids = obj_in.materials_shared + obj_in.samples_distributed
+        for prod_id in all_product_ids:
             if not product_repo.get(db, id=prod_id):
                 raise HTTPException(status_code=404, detail=f"Product {prod_id} not found")
 
         # Convert schemas to dicts
-        interaction_dict = obj_in.model_dump(exclude={"product_ids", "follow_ups"})
-        follow_ups_list = [fu.model_dump() for fu in obj_in.follow_ups]
+        interaction_dict = obj_in.model_dump(exclude={"materials_shared", "samples_distributed"})
         
         interaction = interaction_repo.create_with_followups_and_products(
             db=db,
             obj_in=interaction_dict,
-            product_ids=obj_in.product_ids,
-            follow_ups=follow_ups_list
+            product_ids=all_product_ids,
+            follow_ups=[]
         )
         return interaction
 

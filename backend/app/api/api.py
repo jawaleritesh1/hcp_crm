@@ -17,6 +17,17 @@ def create_hcp(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@api_router.get("/hcps", response_model=List[HCPResponse])
+def get_hcps(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    try:
+        return crm_service.get_hcps(db, skip=skip, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.get("/hcps/search", response_model=List[HCPResponse])
 def search_hcps(
     q: str = Query(..., min_length=1, description="Search query for HCP name"),

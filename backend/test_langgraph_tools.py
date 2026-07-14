@@ -4,6 +4,9 @@ import json
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
 if not os.getenv("GROQ_API_KEY"):
     os.environ["GROQ_API_KEY"] = "gsk_dummy_key"
 

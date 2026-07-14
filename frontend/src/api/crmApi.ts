@@ -30,6 +30,11 @@ export interface InteractionPayload {
 }
 
 export const crmApi = {
+  getHCPs: async (): Promise<HCP[]> => {
+    const response = await apiClient.get('/hcps');
+    return response.data;
+  },
+
   searchHCPs: async (query: string): Promise<HCP[]> => {
     if (!query) return [];
     const response = await apiClient.get(`/hcps/search?q=${query}`);

@@ -43,9 +43,14 @@ class InteractionProduct(Base):
 class Interaction(BaseModel):
     __tablename__ = "interaction"
     hcp_id = Column(Uuid(as_uuid=True), ForeignKey("hcp.id", ondelete="RESTRICT"), nullable=False)
+    interaction_type = Column(String, nullable=True)
     interaction_date = Column(DateTime(timezone=True), nullable=False)
+    interaction_time = Column(String, nullable=True)
+    attendees = Column(String, nullable=True)
+    topics_discussed = Column(Text, nullable=True)
+    outcomes = Column(Text, nullable=True)
     sentiment = Column(String, nullable=True)
-    summary = Column(Text, nullable=True)
+    follow_ups_text = Column(Text, nullable=True)
     status = Column(String, nullable=False, default="COMPLETED")
 
     hcp = relationship("HCP", back_populates="interactions")

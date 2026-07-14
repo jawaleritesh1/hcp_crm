@@ -36,14 +36,14 @@ class GroqService:
 
     @retry(
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        stop=stop_after_attempt(3),
+        stop=stop_after_attempt(6),
         retry=retry_if_exception_type((APIConnectionError, RateLimitError, httpx.TimeoutException)),
         reraise=True
     )
     def _execute_completion(
         self, 
         messages: list, 
-        model: str = "llama-3.3-70b-versatile",
+        model: str = "llama-3.1-8b-instant",
         response_format: Optional[Dict] = None
     ) -> Any:
         """Wrapper to execute the API call with retries and timeout handling."""
@@ -66,7 +66,7 @@ class GroqService:
         self, 
         prompt: str, 
         schema_model: Type[BaseModel], 
-        model: str = "llama-3.3-70b-versatile"
+        model: str = "llama-3.1-8b-instant"
     ) -> BaseModel:
         """
         Sends a prompt to the Groq LLM and enforces a JSON structured output 
