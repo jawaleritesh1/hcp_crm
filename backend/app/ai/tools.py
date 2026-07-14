@@ -133,7 +133,11 @@ def log_interaction_tool(transcript: str) -> str:
     """
     try:
         today = datetime.utcnow().strftime("%Y-%m-%d")
-        prompt = f"Extract the HCP name, interaction type, time, attendees, materials shared, samples distributed, topics discussed, outcomes, overall sentiment, and interaction date from this interaction: {transcript}. Today's date is {today}. If the interaction mentions 'yesterday', 'today', 'on 5 July', etc., resolve it to the exact YYYY-MM-DD date. If no date is mentioned, default to {today}. Differentiate between sharing digital/printed materials vs physically dropping off samples."
+        prompt = (
+            f"Extract the HCP name, interaction type, time, attendees, materials shared, samples distributed, topics discussed, outcomes, overall sentiment, and interaction date from this interaction: {transcript}.\n"
+            f"Today's date is {today}. "
+            "The sales representative logging this meeting is named 'Ritesh'. Therefore, the 'attendees' field MUST always include 'Ritesh' along with the HCP name (e.g. 'Ritesh, Dr. Ananya Kulkarni') and any other named attendees present."
+        )
         result = groq_service.extract_structured_data(prompt, LogInteractionPayload)
         
         payload = {
@@ -200,7 +204,8 @@ def edit_interaction_tool(current_payload: str, correction: str, chat_history: O
             f"3. Never erase or overwrite unrelated information.\n"
             f"4. If a date is changed, format it as YYYY-MM-DD.\n"
             f"5. Return the full, updated payload conforming to the FullInteractionPayload schema.\n"
-            f"6. TYPE CONSTRAINTS: 'materials_shared' and 'samples_distributed' must be flat lists of strings (e.g. [\"CardioPlus\"]), NOT list of dicts. 'sentiment' must be a single string (e.g. \"Positive\"), NOT a dict."
+            f"6. TYPE CONSTRAINTS: 'materials_shared' and 'samples_distributed' must be flat lists of strings (e.g. [\"CardioPlus\"]), NOT list of dicts. 'sentiment' must be a single string (e.g. \"Positive\"), NOT a dict.\n"
+            f"7. The sales representative logging this meeting is named 'Ritesh'. Therefore, the 'attendees' field MUST always include 'Ritesh' along with the HCP name (e.g. 'Ritesh, Dr. Ananya Kulkarni') and any other named attendees present."
         )
         result = groq_service.extract_structured_data(prompt, FullInteractionPayload)
         

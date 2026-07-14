@@ -86,7 +86,11 @@ def extract_entities_node(state: GraphState):
     transcript = all_human[-1] if all_human else ""
     
     today = datetime.utcnow().strftime("%Y-%m-%d")
-    prompt = f"Extract the HCP name, interaction type, time, attendees, materials shared, samples distributed, topics discussed, outcomes, and sentiment from this interaction note. Also extract the interaction_date. Today is {today}. If the interaction mentions 'yesterday', 'today', 'on 5 July', etc., resolve it to the exact YYYY-MM-DD date. If no date is mentioned, default to {today}. Interaction note:\n{transcript}"
+    prompt = (
+        f"Extract the HCP name, interaction type, time, attendees, materials shared, samples distributed, topics discussed, outcomes, and sentiment from this interaction note. Also extract the interaction_date. "
+        f"Today is {today}. The sales representative logging this meeting is named 'Ritesh'. Therefore, the 'attendees' field MUST always include 'Ritesh' along with the HCP name (e.g. 'Ritesh, Dr. Ananya Kulkarni') and any other named attendees present. "
+        f"Interaction note:\n{transcript}"
+    )
     
     try:
         res = groq_service.extract_structured_data(prompt, EntityExtractionOutput)
