@@ -55,8 +55,70 @@ def create_interaction(
 ):
     return crm_service.create_interaction(db, obj_in=interaction_in)
 
-from app.schemas.schemas import AIProcessRequest, AIProcessResponse
+from app.schemas.schemas import AIProcessRequest, AIProcessResponse, FollowUpChecklistItem, FollowUpStatusUpdate
 from app.ai.graph_service import graph_service
+from uuid import UUID
+
+@api_router.get("/hcps/{hcp_id}/interactions", response_model=List[InteractionResponse])
+def get_hcp_interactions_endpoint(
+    hcp_id: UUID,
+    db: Session = Depends(get_db)
+):
+    try:
+        return crm_service.get_hcp_interactions(db, hcp_id=str(hcp_id))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/follow-ups", response_model=List[FollowUpChecklistItem])
+def get_pending_follow_ups_endpoint(
+    db: Session = Depends(get_db)
+):
+    try:
+        items = crm_service.get_pending_follow_ups(db)
+        res = []
+        for item in items:
+            hcp = item.interaction.hcp
+            hcp_name = f"Dr. {hcp.first_name} {hcp.last_name}"
+            res.append(
+                FollowUpChecklistItem(
+                    id=item.id,
+                    action_item=item.action_item,
+                    priority=item.priority,
+                    due_date=item.due_date,
+                    reason=item.reason,
+                    status=item.status,
+                    hcp_name=hcp_name,
+                    created_at=item.created_at
+                )
+            )
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.patch("/follow-ups/{follow_up_id}", response_model=FollowUpChecklistItem)
+def update_follow_up_status_endpoint(
+    follow_up_id: UUID,
+    status_update: FollowUpStatusUpdate,
+    db: Session = Depends(get_db)
+):
+    try:
+        item = crm_service.update_follow_up_status(db, follow_up_id=str(follow_up_id), status=status_update.status)
+        hcp = item.interaction.hcp
+        hcp_name = f"Dr. {hcp.first_name} {hcp.last_name}"
+        return FollowUpChecklistItem(
+            id=item.id,
+            action_item=item.action_item,
+            priority=item.priority,
+            due_date=item.due_date,
+            reason=item.reason,
+            status=item.status,
+            hcp_name=hcp_name,
+            created_at=item.created_at
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/ai/process-interaction", response_model=AIProcessResponse)
 def process_interaction(request: AIProcessRequest):

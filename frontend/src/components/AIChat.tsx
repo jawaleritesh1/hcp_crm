@@ -14,6 +14,8 @@ import {
   InputAdornment,
   Chip,
   Divider,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -22,7 +24,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import SearchIcon from '@mui/icons-material/Search';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
-import { addMessage, setProcessing, updateForm, acceptDuplicateExtraction, markCandidateSelected } from '../store';
+import { addMessage, setProcessing, updateForm, acceptDuplicateExtraction, markCandidateSelected, toggleFollowUpChecklist } from '../store';
 import type { RootState, InteractionFormState, EntityOption, HCPCandidateItem, UpdatedFieldInfo } from '../store';
 import { crmApi } from '../api/crmApi';
 
@@ -208,7 +210,9 @@ const AIChat: React.FC = () => {
           id: (Date.now() + 1).toString(),
           sender: 'ai',
           text: response.explanation || 'Processed successfully.',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          historyData: response.history_data && response.history_data.length > 0 ? response.history_data : undefined,
+          followUpsChecklist: response.follow_ups_checklist && response.follow_ups_checklist.length > 0 ? response.follow_ups_checklist : undefined,
         }));
 
         if (data && (data.hcp?.name || data.materials_shared?.length > 0 || data.samples_distributed?.length > 0 || data.topics_discussed)) {
@@ -342,6 +346,17 @@ const AIChat: React.FC = () => {
   const handleAcceptExtraction = (msgId: string, data: Partial<InteractionFormState>) => {
     dispatch(acceptDuplicateExtraction(msgId));
     dispatch(updateForm(data));
+  };
+
+  const handleFollowUpToggle = async (messageId: string, taskId: string, currentStatus: string) => {
+    try {
+      const nextStatus = currentStatus === 'PENDING' ? 'COMPLETED' : 'PENDING';
+      dispatch(toggleFollowUpChecklist({ messageId, taskId, status: nextStatus }));
+      await crmApi.updateFollowUpStatus(taskId, nextStatus);
+    } catch (err) {
+      console.error("Failed to toggle follow-up task status:", err);
+      dispatch(toggleFollowUpChecklist({ messageId, taskId, status: currentStatus }));
+    }
   };
 
   return (
@@ -625,10 +640,112 @@ const AIChat: React.FC = () => {
                   color: msg.sender === 'user' ? 'primary.contrastText' : 'text.primary',
                   borderRadius: 3,
                   border: msg.sender === 'ai' ? '1px solid #e0e0e0' : 'none',
-                  whiteSpace: 'pre-wrap'
+                  whiteSpace: 'pre-wrap',
+                  width: (msg.historyData || msg.followUpsChecklist) ? '100%' : 'auto'
                 }}
               >
                 <Typography variant="body2" sx={{ lineHeight: 1.6 }}>{msg.text}</Typography>
+
+                {/* Render Timeline History Card */}
+                {msg.historyData && msg.historyData.length > 0 && (
+                  <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}>
+                    {msg.historyData.map((h: any) => (
+                      <Box key={h.id} sx={{ p: 1.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 2.5 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                          <Chip 
+                            label={h.interaction_type || 'Visit'} 
+                            size="small" 
+                            color="primary" 
+                            variant="soft" 
+                            sx={{ height: 20, fontSize: '0.7rem', fontWeight: 'bold' }} 
+                          />
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'medium' }}>
+                            📅 {h.interaction_date} {h.interaction_time ? `at ${h.interaction_time}` : ''}
+                          </Typography>
+                        </Box>
+                        {h.topics_discussed && (
+                          <Typography variant="body2" sx={{ fontWeight: 'bold', mt: 0.75, fontSize: '0.85rem', color: 'text.primary' }}>
+                            Topics: {h.topics_discussed}
+                          </Typography>
+                        )}
+                        {h.outcomes && (
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic' }}>
+                            Outcomes: {h.outcomes}
+                          </Typography>
+                        )}
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1, pt: 1, borderTop: '1px dashed #e2e8f0' }}>
+                          <Typography variant="caption" color="text.secondary">
+                            👥 Attendees: {h.attendees || 'None'}
+                          </Typography>
+                          <Typography variant="caption" sx={{ 
+                            fontWeight: 'bold', 
+                            color: h.sentiment === 'Positive' ? 'success.dark' : h.sentiment === 'Negative' ? 'error.dark' : 'warning.dark' 
+                          }}>
+                            Sentiment: {h.sentiment}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+
+                {/* Render Interactive Follow-up Checklist */}
+                {msg.followUpsChecklist && msg.followUpsChecklist.length > 0 && (
+                  <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.2, width: '100%' }}>
+                    {msg.followUpsChecklist.map((task: any) => (
+                      <Box key={task.id} sx={{ 
+                        p: 1.2, 
+                        bgcolor: task.status === 'COMPLETED' ? '#f0fdf4' : '#fff',
+                        border: '1px solid',
+                        borderColor: task.status === 'COMPLETED' ? '#bbf7d0' : '#e2e8f0', 
+                        borderRadius: 2.5,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 1
+                      }}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={task.status === 'COMPLETED'}
+                              onChange={() => handleFollowUpToggle(msg.id, task.id, task.status)}
+                              color="success"
+                              size="small"
+                              sx={{ py: 0 }}
+                            />
+                          }
+                          label={
+                            <Box sx={{ ml: -0.5 }}>
+                              <Typography variant="body2" sx={{ 
+                                fontWeight: 'bold', 
+                                fontSize: '0.85rem',
+                                textDecoration: task.status === 'COMPLETED' ? 'line-through' : 'none',
+                                color: task.status === 'COMPLETED' ? 'text.secondary' : 'text.primary'
+                              }}>
+                                {task.action_item}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.75rem' }}>
+                                For {task.hcp_name} • Due: {task.due_date ? task.due_date.substring(0, 10) : 'No due date'}
+                              </Typography>
+                            </Box>
+                          }
+                          sx={{ m: 0 }}
+                        />
+                        <Chip
+                          label={task.priority}
+                          size="small"
+                          sx={{ 
+                            height: 20, 
+                            fontSize: '0.7rem',
+                            fontWeight: 'bold',
+                            bgcolor: task.priority === 'High' || task.priority === 'Critical' ? '#fee2e2' : '#f1f5f9',
+                            color: task.priority === 'High' || task.priority === 'Critical' ? '#ef4444' : '#64748b'
+                          }}
+                        />
+                      </Box>
+                    ))}
+                  </Box>
+                )}
               </Paper>
             )}
           </Box>

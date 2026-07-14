@@ -60,5 +60,15 @@ export const crmApi = {
   processInteraction: async (message: string, threadId: string): Promise<any> => {
     const response = await apiClient.post('/ai/process-interaction', { message, thread_id: threadId });
     return response.data;
+  },
+
+  getFollowUps: async (): Promise<any[]> => {
+    const response = await apiClient.get('/follow-ups');
+    return response.data;
+  },
+
+  updateFollowUpStatus: async (followUpId: string, status: 'PENDING' | 'COMPLETED'): Promise<any> => {
+    const response = await apiClient.patch(`/follow-ups/${follow_up_id}`, { status });
+    return response.data;
   }
 };

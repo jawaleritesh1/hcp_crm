@@ -3,6 +3,7 @@ from app.repositories.hcp import hcp as hcp_repo
 from app.repositories.product import product as product_repo
 from app.repositories.interaction import interaction as interaction_repo
 from app.schemas.schemas import InteractionCreate, HCPResponse, ProductResponse, HCPBase
+from app.models.models import FollowUp, Interaction, HCP
 from fastapi import HTTPException
 
 class CRMService:
@@ -49,5 +50,23 @@ class CRMService:
             follow_ups=[]
         )
         return interaction
+
+    @staticmethod
+    def get_hcp_interactions(db: Session, hcp_id: str):
+        return db.query(Interaction).filter(Interaction.hcp_id == hcp_id).order_by(Interaction.interaction_date.desc()).all()
+
+    @staticmethod
+    def get_pending_follow_ups(db: Session):
+        return db.query(FollowUp).join(Interaction).join(HCP).filter(FollowUp.status == "PENDING").order_by(FollowUp.due_date.asc()).all()
+
+    @staticmethod
+    def update_follow_up_status(db: Session, follow_up_id: str, status: str):
+        follow_up = db.query(FollowUp).filter(FollowUp.id == follow_up_id).first()
+        if not follow_up:
+            raise HTTPException(status_code=404, detail="FollowUp not found")
+        follow_up.status = status
+        db.commit()
+        db.refresh(follow_up)
+        return follow_up
 
 crm_service = CRMService()

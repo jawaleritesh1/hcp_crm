@@ -114,11 +114,39 @@ class MetaInfo(BaseModel):
     llm_model: str
     execution_trace: List[str] = []
 
+class FollowUpChecklistItem(BaseModel):
+    id: UUID
+    action_item: str
+    priority: str
+    due_date: Optional[datetime] = None
+    reason: Optional[str] = None
+    status: str
+    hcp_name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class FollowUpStatusUpdate(BaseModel):
+    status: str = Field(pattern="^(PENDING|COMPLETED)$")
+
+class HistoryInteractionItem(BaseModel):
+    id: str
+    interaction_type: str
+    interaction_date: str
+    interaction_time: str
+    attendees: str
+    topics_discussed: str
+    outcomes: str
+    sentiment: str
+
 class AIProcessResponse(BaseModel):
     meta: MetaInfo
     explanation: str
     hcp_candidates: List[HCPCandidate] = []
     extracted_data: Optional[ExtractedData] = None
+    history_data: List[HistoryInteractionItem] = []
+    follow_ups_checklist: List[FollowUpChecklistItem] = []
 
 # Interaction Schemas
 class InteractionCreate(BaseModel):
@@ -155,3 +183,5 @@ class InteractionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+

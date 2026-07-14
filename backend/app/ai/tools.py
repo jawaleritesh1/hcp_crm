@@ -375,6 +375,108 @@ def priority_recommendation_tool(action_item: str) -> str:
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
+# ----------------------------------------------------
+# 11. Search Interaction History Tool
+# ----------------------------------------------------
+class SearchInteractionHistoryInput(BaseModel):
+    hcp_name: str = Field(..., description="The name or partial name of the Healthcare Professional to search history for.")
+
+@tool("search_interaction_history_tool", args_schema=SearchInteractionHistoryInput, return_direct=False)
+def search_interaction_history_tool(hcp_name: str) -> str:
+    """Search the database for previous interactions logged with a specific HCP."""
+    db = SessionLocal()
+    try:
+        clean_query = hcp_name.replace("Dr.", "").replace("Dr ", "").strip()
+        hcps = crm_service.search_hcps(db, clean_query)
+        if not hcps:
+            words = clean_query.split()
+            if len(words) > 1:
+                hcps = crm_service.search_hcps(db, words[-1])
+        
+        if not hcps:
+            return json.dumps({"status": "error", "message": f"No Healthcare Professional named '{hcp_name}' found."})
+        
+        hcp = hcps[0]
+        interactions = crm_service.get_hcp_interactions(db, str(hcp.id))
+        
+        results = []
+        for i in interactions:
+            results.append({
+                "id": str(i.id),
+                "interaction_type": i.interaction_type,
+                "interaction_date": i.interaction_date.strftime("%Y-%m-%d") if isinstance(i.interaction_date, datetime) else str(i.interaction_date)[:10],
+                "interaction_time": i.interaction_time or "",
+                "attendees": i.attendees or "",
+                "topics_discussed": i.topics_discussed or "",
+                "outcomes": i.outcomes or "",
+                "sentiment": i.sentiment or "Neutral"
+            })
+            
+        return json.dumps({
+            "status": "success",
+            "hcp_name": f"Dr. {hcp.first_name} {hcp.last_name}",
+            "interactions": results
+        })
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"History search failed: {str(e)}"})
+    finally:
+        db.close()
+
+# ----------------------------------------------------
+# 12. Manage Follow-ups Tool
+# ----------------------------------------------------
+class ManageFollowupsInput(BaseModel):
+    action: str = Field("list", description="Must be 'list' (to show pending tasks) or 'complete' (to mark a task as done).")
+    action_item_text: Optional[str] = Field(None, description="The text of the follow-up task to mark as completed (e.g., 'send trials').")
+
+@tool("manage_followups_tool", args_schema=ManageFollowupsInput, return_direct=False)
+def manage_followups_tool(action: str, action_item_text: Optional[str] = None) -> str:
+    """List pending follow-up action items or mark a follow-up item as completed in the database."""
+    db = SessionLocal()
+    try:
+        if action == "list":
+            items = crm_service.get_pending_follow_ups(db)
+            results = []
+            for item in items:
+                hcp = item.interaction.hcp
+                hcp_name = f"Dr. {hcp.first_name} {hcp.last_name}"
+                results.append({
+                    "id": str(item.id),
+                    "action_item": item.action_item,
+                    "priority": item.priority,
+                    "due_date": item.due_date.strftime("%Y-%m-%d") if isinstance(item.due_date, datetime) else str(item.due_date)[:10] if item.due_date else "",
+                    "reason": item.reason or "",
+                    "status": item.status,
+                    "hcp_name": hcp_name
+                })
+            return json.dumps({"status": "success", "action": "list", "follow_ups": results})
+        
+        elif action == "complete":
+            if not action_item_text:
+                return json.dumps({"status": "error", "message": "Task description text is required to complete a follow-up."})
+            
+            items = crm_service.get_pending_follow_ups(db)
+            target = None
+            for item in items:
+                if action_item_text.lower() in item.action_item.lower():
+                    target = item
+                    break
+            
+            if not target:
+                return json.dumps({"status": "error", "message": f"No pending follow-up task matches '{action_item_text}'."})
+                
+            crm_service.update_follow_up_status(db, str(target.id), "COMPLETED")
+            return json.dumps({
+                "status": "success",
+                "action": "complete",
+                "message": f"Marked task '{target.action_item}' as completed.",
+                "follow_up_id": str(target.id)
+            })
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"Follow-ups action failed: {str(e)}"})
+    finally:
+        db.close()
+
 TOOLS = [
     search_hcp_tool, 
     search_product_tool, 
@@ -385,5 +487,7 @@ TOOLS = [
     next_best_action_tool,
     hcp_engagement_tool,
     duplicate_interaction_tool,
-    priority_recommendation_tool
+    priority_recommendation_tool,
+    search_interaction_history_tool,
+    manage_followups_tool
 ]

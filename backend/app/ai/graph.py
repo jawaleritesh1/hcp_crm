@@ -1,6 +1,6 @@
 import json
 import time
-from typing import TypedDict, Annotated, Any, Dict, List
+from typing import TypedDict, Annotated, Any, Dict, List, Optional
 from datetime import datetime
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -9,11 +9,16 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from pydantic import BaseModel, Field
 
 from app.ai.groq_service import groq_service
-from app.ai.tools import search_hcp_tool, search_product_tool, generate_summary_tool, generate_followup_tool, edit_interaction_tool, next_best_action_tool, hcp_engagement_tool, duplicate_interaction_tool, priority_recommendation_tool
+from app.ai.tools import (
+    search_hcp_tool, search_product_tool, generate_summary_tool, 
+    generate_followup_tool, edit_interaction_tool, next_best_action_tool, 
+    hcp_engagement_tool, duplicate_interaction_tool, priority_recommendation_tool,
+    search_interaction_history_tool, manage_followups_tool
+)
 
 # Pydantic Schemas for LLM Extraction
 class IntentOutput(BaseModel):
-    intent: str = Field(description="Must be 'greeting', 'help', 'log_interaction', 'edit_interaction', 'search_hcp', or 'unknown'")
+    intent: str = Field(description="Must be 'greeting', 'help', 'log_interaction', 'edit_interaction', 'search_hcp', 'view_history', 'manage_followups', or 'unknown'")
 
 class EntityExtractionOutput(BaseModel):
     hcp_name: str = Field(default="")
@@ -52,6 +57,8 @@ class GraphState(TypedDict):
     execution_trace: List[str]
     hcp_candidates: List[Dict[str, Any]]
     skip_enrichment: bool
+    history_data: List[Dict[str, Any]]
+    follow_ups_checklist: List[Dict[str, Any]]
 
 def detect_intent_node(state: GraphState):
     print("[Node] Executing Intent Detection...")
@@ -65,6 +72,8 @@ def detect_intent_node(state: GraphState):
         "- 'greeting': hello, hi, etc.\n"
         "- 'help': what can you do, how does this work, etc.\n"
         "- 'search_hcp': When the user is searching for a doctor/HCP in the database or asking if someone exists (e.g., 'Find Priyanka', 'Search Priya', 'check if Dr. Nair is in the system'). Do NOT classify lookup requests as log_interaction.\n"
+        "- 'view_history': When the user is asking about previous meetings, visits, or discussion logs with a specific doctor (e.g., 'What was discussed with Dr. Sharma last time?', 'Show recent visits for Priya Nair', 'history of meetings with Kulkarni').\n"
+        "- 'manage_followups': When the user is asking to view pending follow-ups or mark a task as completed/done (e.g., 'What follow-ups are due this week?', 'Show my pending tasks', 'Mark task send trials as completed', 'complete action item deliver samples').\n"
         "- 'log_interaction': When the user is describing a meeting or visit that happened with a doctor to log/save (e.g., 'I met Dr. Sharma today', 'spoke to Priya about CardioPlus').\n"
         "- 'edit_interaction': When the user is requesting corrections, updates, or additions to ANY field in the active interaction form (e.g., 'change the name to...', 'actually the date was yesterday', 'the time of meeting was 11am', 'update time to 12:00', 'sentiment was Negative', 'add Ritesh to attendees', 'we also discussed CardioPlus'). When an active form is populated (Context: True), any statement adding, updating, or correcting values to ANY field in the form must be classified as 'edit_interaction'.\n"
         "- 'unknown': anything else.\n\n"
@@ -629,6 +638,79 @@ def search_hcp_node(state: GraphState):
         
     return {"explanation": explanation, "execution_trace": trace}
 
+def view_history_node(state: GraphState):
+    print("[Node] Executing View History Node...")
+    last_message = [m.content for m in state["messages"] if isinstance(m, HumanMessage)][-1]
+    prompt = (
+        f"Extract the name of the doctor or Healthcare Professional (HCP) the user wants to check history for from this message: '{last_message}'.\n"
+        "Just extract the name (e.g. 'Kulkarni' or 'Sharma')."
+    )
+    trace = state.get("execution_trace", []).copy()
+    
+    try:
+        res = groq_service.extract_structured_data(prompt, SearchHCPQueryOutput)
+        query = res.query
+    except Exception:
+        query = last_message
+
+    history_list = []
+    try:
+        trace.append("search_interaction_history_tool")
+        history_res_str = search_interaction_history_tool.invoke({"hcp_name": query})
+        history_res = json.loads(history_res_str)
+        if history_res.get("status") == "success":
+            history_list = history_res.get("interactions", [])
+            hcp_name_full = history_res.get("hcp_name", query)
+            explanation = f"I found {len(history_list)} previous interaction(s) logged for {hcp_name_full}."
+        else:
+            explanation = history_res.get("message", f"Could not find history for '{query}'.")
+    except Exception as e:
+        explanation = f"Failed to retrieve history: {str(e)}"
+        
+    return {"explanation": explanation, "history_data": history_list, "execution_trace": trace}
+
+def manage_followups_node(state: GraphState):
+    print("[Node] Executing Manage Follow-ups Node...")
+    last_message = [m.content for m in state["messages"] if isinstance(m, HumanMessage)][-1]
+    trace = state.get("execution_trace", []).copy()
+    
+    class FollowupsActionClassification(BaseModel):
+        action: str = Field(description="Must be 'list' (if user wants to view, show, or check pending tasks) or 'complete' (if user wants to mark a task as completed/done).")
+        task_text: Optional[str] = Field(None, description="The name or partial description of the task to complete (e.g. 'send trials' or 'deliver samples'). Only populated if action is 'complete'.")
+
+    prompt = (
+        f"Determine the action the user wants to take regarding follow-up tasks from this message: '{last_message}'.\n"
+        "Options:\n"
+        "- 'list': view, show, or list pending tasks.\n"
+        "- 'complete': mark a task as done/completed/finished."
+    )
+    
+    try:
+        action_class = groq_service.extract_structured_data(prompt, FollowupsActionClassification)
+        action = action_class.action
+        task_text = action_class.task_text
+    except Exception:
+        action = "list"
+        task_text = None
+        
+    checklist = []
+    try:
+        trace.append("manage_followups_tool")
+        res_str = manage_followups_tool.invoke({"action": action, "action_item_text": task_text})
+        res = json.loads(res_str)
+        if res.get("status") == "success":
+            if action == "list":
+                checklist = res.get("follow_ups", [])
+                explanation = f"Here are your pending follow-up tasks."
+            else:
+                explanation = res.get("message", "Task status updated successfully.")
+        else:
+            explanation = res.get("message", "Could not execute follow-ups action.")
+    except Exception as e:
+        explanation = f"Follow-ups management failed: {str(e)}"
+        
+    return {"explanation": explanation, "follow_ups_checklist": checklist, "execution_trace": trace}
+
 def format_output_node(state: GraphState):
     print("[Node] Executing Format Output...")
     proc_time = int((time.time() - state.get("start_time", time.time())) * 1000)
@@ -645,6 +727,10 @@ def format_output_node(state: GraphState):
         explanation = state.get("explanation", "Interaction updated.")
     elif intent == "search_hcp":
         explanation = state.get("explanation", "Search completed.")
+    elif intent == "view_history":
+        explanation = state.get("explanation", "History retrieval completed.")
+    elif intent == "manage_followups":
+        explanation = state.get("explanation", "Follow-ups checklist loaded.")
     else:
         # log_interaction
         if not state.get("is_valid"):
@@ -662,7 +748,9 @@ def format_output_node(state: GraphState):
         },
         "explanation": explanation,
         "hcp_candidates": state.get("hcp_candidates", []),
-        "extracted_data": None if intent == "search_hcp" else {
+        "history_data": state.get("history_data", []),
+        "follow_ups_checklist": state.get("follow_ups_checklist", []),
+        "extracted_data": None if intent in ["search_hcp", "view_history", "manage_followups"] else {
             "hcp": state.get("resolved_entities", {}).get("hcp"),
             "interaction_type": state.get("resolved_entities", {}).get("interaction_type"),
             "interaction_time": state.get("resolved_entities", {}).get("interaction_time"),
@@ -692,6 +780,10 @@ def route_after_intent(state: GraphState):
         return "edit_interaction"
     elif intent == "search_hcp":
         return "search_hcp"
+    elif intent == "view_history":
+        return "view_history"
+    elif intent == "manage_followups":
+        return "manage_followups"
     else:
         return "format_output"
 
@@ -717,6 +809,8 @@ def build_langgraph():
     builder.add_node("enrichment", enrichment_node)
     builder.add_node("edit_interaction", edit_interaction_node)
     builder.add_node("search_hcp", search_hcp_node)
+    builder.add_node("view_history", view_history_node)
+    builder.add_node("manage_followups", manage_followups_node)
     builder.add_node("format_output", format_output_node)
     
     builder.add_edge(START, "intent")
@@ -728,6 +822,8 @@ def build_langgraph():
             "extract": "extract",
             "edit_interaction": "edit_interaction",
             "search_hcp": "search_hcp",
+            "view_history": "view_history",
+            "manage_followups": "manage_followups",
             "format_output": "format_output"
         }
     )
@@ -754,6 +850,8 @@ def build_langgraph():
     builder.add_edge("enrichment", "format_output")
     builder.add_edge("edit_interaction", "tool_execution")
     builder.add_edge("search_hcp", "format_output")
+    builder.add_edge("view_history", "format_output")
+    builder.add_edge("manage_followups", "format_output")
     builder.add_edge("format_output", END)
     
     memory = MemorySaver()

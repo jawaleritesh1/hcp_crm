@@ -82,6 +82,8 @@ export interface ChatMessage {
   hcpCandidates?: HCPCandidateItem[];
   candidateSelected?: boolean;
   updatedFields?: UpdatedFieldInfo[];
+  historyData?: any[];
+  followUpsChecklist?: any[];
 }
 
 export interface ChatState {
@@ -125,11 +127,20 @@ export const chatSlice = createSlice({
         msg.candidateSelected = true;
       }
     },
+    toggleFollowUpChecklist: (state, action: PayloadAction<{ messageId: string, taskId: string, status: string }>) => {
+      const msg = state.messages.find(m => m.id === action.payload.messageId);
+      if (msg && msg.followUpsChecklist) {
+        const task = msg.followUpsChecklist.find(t => t.id === action.payload.taskId);
+        if (task) {
+          task.status = action.payload.status;
+        }
+      }
+    },
   },
 });
 
 export const { updateForm, resetForm } = formSlice.actions;
-export const { addMessage, setProcessing, acceptDuplicateExtraction, markCandidateSelected } = chatSlice.actions;
+export const { addMessage, setProcessing, acceptDuplicateExtraction, markCandidateSelected, toggleFollowUpChecklist } = chatSlice.actions;
 
 export const store = configureStore({
   reducer: {
