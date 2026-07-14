@@ -437,17 +437,19 @@ def edit_interaction_node(state: GraphState):
             payload = result["payload"]
             resolved = (state.get("resolved_entities") or {}).copy()
             
-            if "hcp" not in resolved or not resolved["hcp"]:
+            if "hcp" not in resolved or not resolved.get("hcp"):
                 resolved["hcp"] = {"id": None, "name": "", "confidence": 0.0}
                 
-            old_hcp = resolved.get("hcp", {}).copy()
-            new_hcp_name = payload["hcp"]["name"]
+            old_hcp = (resolved.get("hcp") or {}).copy()
+            
+            # --- Robust Programmatic Merge for HCP Name ---
+            new_hcp_name = payload.get("hcp", {}).get("name", "") if payload.get("hcp") else payload.get("hcp_name", "")
+            if (not new_hcp_name or new_hcp_name.lower() in ["none", "null", ""]) and old_hcp.get("name"):
+                new_hcp_name = old_hcp.get("name")
             
             is_create_new = any(phrase in correction_msg.lower() for phrase in ["create new", "add as new", "new hcp", "new doctor"])
             
             if is_create_new:
-                # User confirmed they want a new HCP record.
-                # Use the pending name from the previous search if available.
                 confirmed_name = old_hcp.get("pending_name", new_hcp_name)
                 resolved["hcp"] = {
                     "id": None,
@@ -456,26 +458,18 @@ def edit_interaction_node(state: GraphState):
                     "is_confirmed_new": True
                 }
             else:
-                # User is requesting a change to a new name.
                 old_hcp_name_str = old_hcp.get("name", "").lower()
                 pending_hcp_name_str = old_hcp.get("pending_name", "").lower()
-                requested_name_lower = new_hcp_name.lower()
+                requested_name_lower = new_hcp_name.lower() if new_hcp_name else ""
                 
-                # ─── KEY FIX ───────────────────────────────────────────────
-                # If the HCP has NO database ID (new/unresolved HCP), a name
-                # change is simply a direct correction — apply it immediately.
-                # The candidate-search flow only makes sense when the HCP is
-                # already linked to a DB record and we need to re-resolve it.
                 current_hcp_id = old_hcp.get("id")
                 name_changed = requested_name_lower != old_hcp_name_str and requested_name_lower != pending_hcp_name_str
                 
                 if name_changed and current_hcp_id:
-                    # HCP is known in DB → search for the new name as a candidate
                     old_hcp["requested_name"] = new_hcp_name
                     old_hcp["is_confirmed_new"] = False
                     resolved["hcp"] = old_hcp
                 elif name_changed:
-                    # HCP was not in DB → direct name correction, no search needed
                     resolved["hcp"] = {
                         "id": None,
                         "name": new_hcp_name,
@@ -484,7 +478,6 @@ def edit_interaction_node(state: GraphState):
                         "is_confirmed_new": False
                     }
                 else:
-                    # Name is unchanged → preserve existing HCP as-is
                     hcp_id = old_hcp.get("id")
                     resolved["hcp"] = {
                         "id": hcp_id,
@@ -496,31 +489,99 @@ def edit_interaction_node(state: GraphState):
                         del resolved["hcp"]["requested_name"]
                     if "pending_name" in resolved["hcp"]:
                         del resolved["hcp"]["pending_name"]
+
+            # --- Robust Programmatic Merge for other fields ---
             
+            # Interaction Type
+            new_int_type = payload.get("interaction_type")
+            if (not new_int_type or new_int_type.lower() in ["none", "null", ""]) and resolved_dict.get("interaction_type"):
+                new_int_type = resolved_dict.get("interaction_type")
+            resolved["interaction_type"] = new_int_type or "Meeting"
+            
+            # Interaction Time
+            new_time = payload.get("interaction_time")
+            if (not new_time or new_time.lower() in ["none", "null", ""]) and resolved_dict.get("interaction_time"):
+                new_time = resolved_dict.get("interaction_time")
+            if any(w in correction_msg.lower() for w in ["clear time", "remove time", "delete time"]):
+                new_time = ""
+            resolved["interaction_time"] = new_time or ""
+            
+            # Attendees
+            new_attendees = payload.get("attendees")
+            if (not new_attendees or new_attendees.lower() in ["none", "null", ""]) and resolved_dict.get("attendees"):
+                new_attendees = resolved_dict.get("attendees")
+            
+            # Ensure HCP Name and Ritesh are in Attendees
+            resolved_hcp_name = resolved.get("hcp", {}).get("name", "")
+            if resolved_hcp_name:
+                if not new_attendees:
+                    new_attendees = f"Ritesh, {resolved_hcp_name}"
+                else:
+                    if "ritesh" not in new_attendees.lower():
+                        new_attendees = f"Ritesh, {new_attendees}"
+                    if resolved_hcp_name.lower() not in new_attendees.lower():
+                        # Append the doctor's name cleanly
+                        new_attendees = f"{new_attendees}, {resolved_hcp_name}"
+            else:
+                if new_attendees and "ritesh" not in new_attendees.lower():
+                    new_attendees = f"Ritesh, {new_attendees}"
+            
+            # Format attendees clean commas
+            if new_attendees:
+                new_attendees = ", ".join(filter(None, [x.strip() for x in new_attendees.split(",") if x.strip()]))
+            resolved["attendees"] = new_attendees or ""
+            
+            # Topics Discussed
+            new_topics = payload.get("topics_discussed")
+            if (not new_topics or new_topics.lower() in ["none", "null", ""]) and resolved_dict.get("topics_discussed"):
+                new_topics = resolved_dict.get("topics_discussed")
+            resolved["topics_discussed"] = new_topics or ""
+            
+            # Outcomes
+            new_outcomes = payload.get("outcomes")
+            if (not new_outcomes or new_outcomes.lower() in ["none", "null", ""]) and resolved_dict.get("outcomes"):
+                new_outcomes = resolved_dict.get("outcomes")
+            resolved["outcomes"] = new_outcomes or ""
+            
+            # Sentiment
+            new_sent = payload.get("sentiment")
+            if (not new_sent or new_sent.lower() in ["none", "null", ""]) and resolved_dict.get("sentiment", {}).get("value"):
+                new_sent = resolved_dict.get("sentiment", {}).get("value")
+            resolved["sentiment"] = {"value": new_sent or "Neutral", "confidence": 1.0}
+            
+            # Interaction Date
+            new_date = payload.get("interaction_date")
+            if (not new_date or new_date.lower() in ["none", "null", ""]) and resolved_dict.get("interaction_date"):
+                new_date = resolved_dict.get("interaction_date")
+            resolved["interaction_date"] = new_date or datetime.utcnow().strftime("%Y-%m-%d")
+
+            # Products mapping
             def map_new_products(new_p_list, old_list):
                 out = []
-                for p_dict in new_p_list:
+                for p_dict in (new_p_list or []):
                     p_name = p_dict.get("name", "")
-                    existing = next((cp for cp in old_list if cp["name"].lower() == p_name.lower()), None)
-                    out.append({"id": existing["id"] if existing else None, "name": p_name, "confidence": 1.0})
+                    existing = next((cp for cp in (old_list or []) if cp.get("name", "").lower() == p_name.lower()), None)
+                    out.append({"id": existing.get("id") if existing else None, "name": p_name, "confidence": 1.0})
                 return out
 
-            resolved["interaction_type"] = payload.get("interaction_type", "Meeting")
-            resolved["interaction_time"] = payload.get("interaction_time", "")
-            resolved["attendees"] = payload.get("attendees", "")
-            resolved["topics_discussed"] = payload.get("topics_discussed", "")
-            resolved["materials_shared"] = map_new_products(payload.get("materials_shared", []), resolved.get("materials_shared", []))
-            resolved["samples_distributed"] = map_new_products(payload.get("samples_distributed", []), resolved.get("samples_distributed", []))
-            resolved["outcomes"] = payload.get("outcomes", "")
+            new_mats = payload.get("materials_shared", [])
+            if not new_mats and resolved_dict.get("materials_shared"):
+                if not any(w in correction_msg.lower() for w in ["clear materials", "remove material", "remove cardioplus"]):
+                    new_mats = [{"name": p.get("name")} for p in resolved_dict.get("materials_shared", [])]
+            resolved["materials_shared"] = map_new_products(new_mats, resolved_dict.get("materials_shared", []))
             
-            resolved["sentiment"] = {"value": payload["sentiment"], "confidence": 1.0}
-            resolved["interaction_date"] = payload["interaction_date"]
+            new_samps = payload.get("samples_distributed", [])
+            if not new_samps and resolved_dict.get("samples_distributed"):
+                if not any(w in correction_msg.lower() for w in ["clear samples", "remove sample", "remove cardioplus"]):
+                    new_samps = [{"name": p.get("name")} for p in resolved_dict.get("samples_distributed", [])]
+            resolved["samples_distributed"] = map_new_products(new_samps, resolved_dict.get("samples_distributed", []))
             
             follow_ups = payload.get("follow_ups", state.get("follow_ups", []))
             
             old_hcp_name = old_hcp.get("name", "")
-            if new_hcp_name and new_hcp_name != old_hcp_name:
-                explanation = f"Form updated: HCP changed to {new_hcp_name}."
+            resolved_hcp_name = resolved.get("hcp", {}).get("name", "")
+            if resolved_hcp_name and resolved_hcp_name != old_hcp_name:
+                explanation = f"Form updated: HCP changed to {resolved_hcp_name}."
             else:
                 explanation = "I have updated the interaction details based on your correction."
 
