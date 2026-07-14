@@ -444,10 +444,11 @@ def manage_followups_tool(action: str, action_item_text: Optional[str] = None) -
                     "id": str(item.id),
                     "action_item": item.action_item,
                     "priority": item.priority,
-                    "due_date": item.due_date.strftime("%Y-%m-%d") if isinstance(item.due_date, datetime) else str(item.due_date)[:10] if item.due_date else "",
+                    "due_date": item.due_date.isoformat() if item.due_date else None,
                     "reason": item.reason or "",
                     "status": item.status,
-                    "hcp_name": hcp_name
+                    "hcp_name": hcp_name,
+                    "created_at": item.created_at.isoformat() if item.created_at else datetime.utcnow().isoformat()
                 })
             return json.dumps({"status": "success", "action": "list", "follow_ups": results})
         
