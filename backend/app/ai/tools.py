@@ -168,7 +168,7 @@ class ExtractedFollowUpPayload(BaseModel):
 class FullInteractionPayload(BaseModel):
     hcp_name: str
     interaction_type: Optional[str]
-    interaction_time: Optional[str]
+    interaction_time: Optional[str] = Field(description="The time of the interaction in HH:MM format (24-hour), e.g., '14:30' or '11:00'")
     attendees: Optional[str]
     topics_discussed: Optional[str]
     materials_shared: List[str]

@@ -18,7 +18,7 @@ class IntentOutput(BaseModel):
 class EntityExtractionOutput(BaseModel):
     hcp_name: str = Field(default="")
     interaction_type: str = Field(default="Meeting")
-    interaction_time: str = Field(default="")
+    interaction_time: str = Field(default="", description="The time of the interaction in HH:MM format (24-hour), e.g., '14:30' or '11:00'")
     attendees: str = Field(default="")
     materials_shared: List[str] = Field(default_factory=list, description="List of pharmaceutical product/brand names shared as materials (e.g. ['CardioPlus'])")
     samples_distributed: List[str] = Field(default_factory=list, description="List of pharmaceutical product/brand names distributed as physical samples (e.g. ['CardioPlus'])")
@@ -56,7 +56,9 @@ class GraphState(TypedDict):
 def detect_intent_node(state: GraphState):
     print("[Node] Executing Intent Detection...")
     transcript = "\n".join([m.content for m in state["messages"] if isinstance(m, HumanMessage)][-1:])
-    has_active_state = bool(state.get("resolved_entities"))
+    resolved_entities = state.get("resolved_entities")
+    has_active_state = bool(resolved_entities and resolved_entities.get("hcp") and resolved_entities.get("hcp", {}).get("name"))
+    
     prompt = (
         "Determine the intent of the user's latest message.\n"
         "Options:\n"
@@ -64,7 +66,7 @@ def detect_intent_node(state: GraphState):
         "- 'help': what can you do, how does this work, etc.\n"
         "- 'search_hcp': When the user is searching for a doctor/HCP in the database or asking if someone exists (e.g., 'Find Priyanka', 'Search Priya', 'check if Dr. Nair is in the system'). Do NOT classify lookup requests as log_interaction.\n"
         "- 'log_interaction': When the user is describing a meeting or visit that happened with a doctor to log/save (e.g., 'I met Dr. Sharma today', 'spoke to Priya about CardioPlus').\n"
-        "- 'edit_interaction': When the user is requesting corrections or updates to the logged meeting details (e.g., 'sorry, the name is Priya S. Nair', 'change the sentiment to Positive', 'actually we discussed NeuroZine', 'Actually, the doctor was Anita Desai').\n"
+        "- 'edit_interaction': When the user is requesting corrections, updates, or additions to ANY field in the active interaction form (e.g., 'change the name to...', 'actually the date was yesterday', 'the time of meeting was 11am', 'update time to 12:00', 'sentiment was Negative', 'add Ritesh to attendees', 'we also discussed CardioPlus'). When an active form is populated (Context: True), any statement adding, updating, or correcting values to ANY field in the form must be classified as 'edit_interaction'.\n"
         "- 'unknown': anything else.\n\n"
         f"Context: An interaction form is currently active/filled: {has_active_state}\n"
         f"Message:\n{transcript}"
