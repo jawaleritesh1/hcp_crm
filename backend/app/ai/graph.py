@@ -750,7 +750,7 @@ def format_output_node(state: GraphState):
         "hcp_candidates": state.get("hcp_candidates", []),
         "history_data": state.get("history_data", []),
         "follow_ups_checklist": state.get("follow_ups_checklist", []),
-        "extracted_data": None if intent in ["search_hcp", "view_history", "manage_followups"] else {
+        "extracted_data": None if intent not in ["log_interaction", "edit_interaction"] else {
             "hcp": state.get("resolved_entities", {}).get("hcp"),
             "interaction_type": state.get("resolved_entities", {}).get("interaction_type"),
             "interaction_time": state.get("resolved_entities", {}).get("interaction_time"),
