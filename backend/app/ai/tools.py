@@ -205,7 +205,7 @@ def edit_interaction_tool(current_payload: str, correction: str, chat_history: O
             f"4. If a date is changed, format it as YYYY-MM-DD.\n"
             f"5. Return the full, updated payload conforming to the FullInteractionPayload schema.\n"
             f"6. TYPE CONSTRAINTS: 'materials_shared' and 'samples_distributed' must be flat lists of strings (e.g. [\"CardioPlus\"]), NOT list of dicts. 'sentiment' must be a single string (e.g. \"Positive\"), NOT a dict.\n"
-            f"7. The sales representative logging this meeting is named 'Ritesh'. Therefore, the 'attendees' field MUST always include 'Ritesh' along with the HCP name (e.g. 'Ritesh, Dr. Ananya Kulkarni') and any other named attendees present."
+            f"7. The sales representative logging this meeting is named 'Ritesh'. Therefore, the 'attendees' field MUST always include 'Ritesh' along with the current HCP name. If the HCP is corrected or updated (e.g. changed to a new doctor), you MUST remove the old HCP's name from the attendees list and replace it with the new HCP's name, while keeping 'Ritesh' and any other non-HCP attendees."
         )
         result = groq_service.extract_structured_data(prompt, FullInteractionPayload)
         
