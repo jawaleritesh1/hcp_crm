@@ -19,6 +19,7 @@ import {
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import MicIcon from '@mui/icons-material/Mic';
 import PersonIcon from '@mui/icons-material/Person';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
@@ -103,6 +104,66 @@ const AIChat: React.FC = () => {
   const formState = useSelector((state: RootState) => state.form);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const [isRecording, setIsRecording] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          setInput(prev => {
+            const separator = prev && !prev.endsWith(' ') ? ' ' : '';
+            return prev + separator + finalTranscript.trim();
+          });
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error);
+        setIsRecording(false);
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const handleToggleRecording = () => {
+    if (!recognitionRef.current) {
+      alert("Speech recognition is not supported in this browser. Please use Chrome or Edge.");
+      return;
+    }
+
+    if (isRecording) {
+      recognitionRef.current.stop();
+    } else {
+      try {
+        recognitionRef.current.start();
+      } catch (err) {
+        console.error("Failed to start speech recognition", err);
+      }
+    }
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -153,6 +214,9 @@ const AIChat: React.FC = () => {
   };
 
   const handleSend = async () => {
+    if (isRecording && recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
     if (!input.trim()) return;
     
     const userMsg = input;
@@ -213,6 +277,7 @@ const AIChat: React.FC = () => {
           timestamp: new Date().toISOString(),
           historyData: response.history_data && response.history_data.length > 0 ? response.history_data : undefined,
           followUpsChecklist: response.follow_ups_checklist && response.follow_ups_checklist.length > 0 ? response.follow_ups_checklist : undefined,
+          hcpCandidates: hasAmbiguousCandidates ? candidates : undefined,
         }));
 
         if (data && (data.hcp?.name || data.materials_shared?.length > 0 || data.samples_distributed?.length > 0 || data.topics_discussed)) {
@@ -346,6 +411,40 @@ const AIChat: React.FC = () => {
   const handleAcceptExtraction = (msgId: string, data: Partial<InteractionFormState>) => {
     dispatch(acceptDuplicateExtraction(msgId));
     dispatch(updateForm(data));
+  };
+
+  const handleSearchHCPHistorySelect = async (doctorName: string) => {
+    const historyQuery = `Show history of meetings with ${doctorName}`;
+    dispatch(addMessage({
+      id: Date.now().toString(),
+      sender: 'user',
+      text: historyQuery,
+      timestamp: new Date().toISOString()
+    }));
+    
+    dispatch(setProcessing(true));
+    try {
+      const response = await crmApi.processInteraction(historyQuery, chatState.threadId);
+      
+      dispatch(addMessage({
+        id: (Date.now() + 1).toString(),
+        sender: 'ai',
+        text: response.explanation || 'Here is the history.',
+        timestamp: new Date().toISOString(),
+        historyData: response.history_data && response.history_data.length > 0 ? response.history_data : undefined,
+        followUpsChecklist: response.follow_ups_checklist && response.follow_ups_checklist.length > 0 ? response.follow_ups_checklist : undefined,
+      }));
+    } catch (error) {
+      console.error(error);
+      dispatch(addMessage({
+        id: (Date.now() + 1).toString(),
+        sender: 'ai',
+        text: 'Failed to retrieve interaction history. Please try again.',
+        timestamp: new Date().toISOString()
+      }));
+    } finally {
+      dispatch(setProcessing(false));
+    }
   };
 
   const handleFollowUpToggle = async (messageId: string, taskId: string, currentStatus: string) => {
@@ -646,6 +745,28 @@ const AIChat: React.FC = () => {
               >
                 <Typography variant="body2" sx={{ lineHeight: 1.6 }}>{msg.text}</Typography>
 
+                {/* Render Search Results Candidates */}
+                {msg.hcpCandidates && msg.hcpCandidates.length > 0 && (
+                  <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {msg.hcpCandidates.map((candidate) => (
+                      <Button
+                        key={candidate.id}
+                        variant="outlined"
+                        size="small"
+                        color="secondary"
+                        onClick={() => handleSearchHCPHistorySelect(candidate.name)}
+                        sx={{ textTransform: 'none', justifyContent: 'flex-start', py: 0.75, border: '1px solid #e0d0e0', borderRadius: 2 }}
+                      >
+                        <PersonIcon fontSize="small" sx={{ mr: 1, color: 'secondary.main' }} />
+                        <Box sx={{ textAlign: 'left' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', fontSize: '0.85rem' }}>{candidate.name}</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.75rem' }}>{candidate.specialty}</Typography>
+                        </Box>
+                      </Button>
+                    ))}
+                  </Box>
+                )}
+
                 {/* Render Timeline History Card */}
                 {msg.historyData && msg.historyData.length > 0 && (
                   <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}>
@@ -782,7 +903,22 @@ const AIChat: React.FC = () => {
           slotProps={{
             input: {
               endAdornment: (
-                <InputAdornment position="end">
+                <InputAdornment position="end" sx={{ gap: 0.5 }}>
+                  <IconButton 
+                    color={isRecording ? "error" : "default"} 
+                    onClick={handleToggleRecording}
+                    disabled={chatState.isProcessing}
+                    sx={{
+                      animation: isRecording ? 'pulse 1.5s infinite' : 'none',
+                      '@keyframes pulse': {
+                        '0%': { opacity: 1 },
+                        '50%': { opacity: 0.4 },
+                        '100%': { opacity: 1 },
+                      }
+                    }}
+                  >
+                    <MicIcon />
+                  </IconButton>
                   <IconButton color="secondary" onClick={handleSend} disabled={!input.trim() || chatState.isProcessing}>
                     <SendIcon />
                   </IconButton>

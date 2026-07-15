@@ -629,14 +629,14 @@ def search_hcp_node(state: GraphState):
         hcp_res = json.loads(hcp_res_str)
         if hcp_res.get("status") == "success" and hcp_res.get("results"):
             results = hcp_res["results"]
-            candidates_str = "\n\n".join([f"Dr. {r['name'].replace('Dr. ', '')}\n{r['specialty']}" for r in results])
-            explanation = f"Found {len(results)} Healthcare Professional(s):\n\n{candidates_str}"
+            explanation = f"Found {len(results)} Healthcare Professional(s):"
+            return {"explanation": explanation, "hcp_candidates": results, "execution_trace": trace}
         else:
             explanation = f"No Healthcare Professional named '{query}' exists in the CRM database."
     except Exception as e:
         explanation = f"Search failed: {str(e)}"
         
-    return {"explanation": explanation, "execution_trace": trace}
+    return {"explanation": explanation, "execution_trace": trace, "hcp_candidates": []}
 
 def view_history_node(state: GraphState):
     print("[Node] Executing View History Node...")

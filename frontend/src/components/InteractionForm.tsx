@@ -263,21 +263,9 @@ const InteractionForm = () => {
                   multiline 
                   rows={3} 
                   variant="outlined"
-                  slotProps={{
-                    input: {
-                      endAdornment: (
-                        <InputAdornment position="end" sx={{ alignSelf: 'flex-end', mb: 1 }}>
-                          <IconButton size="small"><MicIcon fontSize="small" /></IconButton>
-                        </InputAdornment>
-                      )
-                    }
-                  }}
                 />
               )}
             />
-            <Button variant="outlined" color="inherit" size="small" startIcon={<AutoAwesomeIcon />} sx={{ mt: 1, textTransform: 'none', bgcolor: '#f8f9fa' }}>
-              Summarize from Voice Note (Requires Consent)
-            </Button>
           </Box>
         </Box>
 
