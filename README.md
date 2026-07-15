@@ -4,11 +4,7 @@ An intelligent, AI-first Customer Relationship Management (CRM) module designed 
 
 ---
 
-## 📺 Project Walkthrough
-* **Interactive Frontend URL:** `http://localhost:5173/`
-* **Backend API Swagger Docs:** `http://localhost:8000/docs`
 
----
 
 ## 🛠️ Technology Stack
 
