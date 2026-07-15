@@ -677,31 +677,51 @@ def manage_followups_node(state: GraphState):
     class FollowupsActionClassification(BaseModel):
         action: str = Field(description="Must be 'list' (if user wants to view, show, or check pending tasks) or 'complete' (if user wants to mark a task as completed/done).")
         task_text: Optional[str] = Field(None, description="The name or partial description of the task to complete (e.g. 'send trials' or 'deliver samples'). Only populated if action is 'complete'.")
+        date_filter: str = Field("all", description="The time scope for listing tasks. Must be exactly one of: 'today' (due today), 'this_week' (due within the current calendar week), 'overdue' (past due date), or 'all' (no filter). Extract from phrases like 'this week', 'today', 'overdue', 'due soon'. Default to 'all' if no time range is mentioned.")
 
     prompt = (
         f"Determine the action the user wants to take regarding follow-up tasks from this message: '{last_message}'.\n"
         "Options:\n"
         "- 'list': view, show, or list pending tasks.\n"
-        "- 'complete': mark a task as done/completed/finished."
+        "- 'complete': mark a task as done/completed/finished.\n\n"
+        "Also determine the date_filter scope:\n"
+        "- 'today': user mentions 'today' or 'due today'\n"
+        "- 'this_week': user mentions 'this week', 'week', 'weekly'\n"
+        "- 'overdue': user mentions 'overdue', 'late', 'missed', 'past due'\n"
+        "- 'all': no specific time range mentioned (default)"
     )
     
     try:
         action_class = groq_service.extract_structured_data(prompt, FollowupsActionClassification)
         action = action_class.action
         task_text = action_class.task_text
+        date_filter = action_class.date_filter or "all"
     except Exception:
         action = "list"
         task_text = None
+        date_filter = "all"
         
     checklist = []
     try:
         trace.append("manage_followups_tool")
-        res_str = manage_followups_tool.invoke({"action": action, "action_item_text": task_text})
+        res_str = manage_followups_tool.invoke({"action": action, "action_item_text": task_text, "date_filter": date_filter})
         res = json.loads(res_str)
         if res.get("status") == "success":
             if action == "list":
                 checklist = res.get("follow_ups", [])
-                explanation = f"Here are your pending follow-up tasks."
+                applied_filter = res.get("filter", "all")
+                filter_labels = {
+                    "today": "due today",
+                    "this_week": "due this week",
+                    "overdue": "that are overdue",
+                    "all": "(all pending)"
+                }
+                label = filter_labels.get(applied_filter, "")
+                count = len(checklist)
+                if count == 0:
+                    explanation = f"No pending follow-up tasks found {label}."
+                else:
+                    explanation = f"Here are your {count} pending follow-up task(s) {label}."
             else:
                 explanation = res.get("message", "Task status updated successfully.")
         else:

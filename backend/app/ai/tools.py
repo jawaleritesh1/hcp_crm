@@ -428,14 +428,28 @@ def search_interaction_history_tool(hcp_name: str) -> str:
 class ManageFollowupsInput(BaseModel):
     action: str = Field("list", description="Must be 'list' (to show pending tasks) or 'complete' (to mark a task as done).")
     action_item_text: Optional[str] = Field(None, description="The text of the follow-up task to mark as completed (e.g., 'send trials').")
+    date_filter: Optional[str] = Field("all", description="Filter tasks by due date. Must be 'today', 'this_week', 'overdue', or 'all'. Default is 'all'.")
 
 @tool("manage_followups_tool", args_schema=ManageFollowupsInput, return_direct=False)
-def manage_followups_tool(action: str, action_item_text: Optional[str] = None) -> str:
+def manage_followups_tool(action: str, action_item_text: Optional[str] = None, date_filter: Optional[str] = "all") -> str:
     """List pending follow-up action items or mark a follow-up item as completed in the database."""
     db = SessionLocal()
     try:
         if action == "list":
             items = crm_service.get_pending_follow_ups(db)
+
+            # Apply date-based filter
+            now = datetime.utcnow().date()
+            week_end = now + timedelta(days=(6 - now.weekday()))  # Sunday of current week
+
+            if date_filter == "today":
+                items = [i for i in items if i.due_date and i.due_date.date() == now]
+            elif date_filter == "this_week":
+                items = [i for i in items if i.due_date and now <= i.due_date.date() <= week_end]
+            elif date_filter == "overdue":
+                items = [i for i in items if i.due_date and i.due_date.date() < now]
+            # else: 'all' — no filtering, return everything
+
             results = []
             for item in items:
                 hcp = item.interaction.hcp
@@ -450,7 +464,7 @@ def manage_followups_tool(action: str, action_item_text: Optional[str] = None) -
                     "hcp_name": hcp_name,
                     "created_at": item.created_at.isoformat() if item.created_at else datetime.utcnow().isoformat()
                 })
-            return json.dumps({"status": "success", "action": "list", "follow_ups": results})
+            return json.dumps({"status": "success", "action": "list", "follow_ups": results, "filter": date_filter})
         
         elif action == "complete":
             if not action_item_text:
