@@ -21,6 +21,30 @@ const theme = createTheme({
   },
   typography: {
     fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    fontSize: 12.5,
+    htmlFontSize: 16,
+    h6: {
+      fontSize: '0.95rem',
+      fontWeight: 600,
+    },
+    subtitle1: {
+      fontSize: '0.88rem',
+    },
+    subtitle2: {
+      fontSize: '0.8rem',
+    },
+    body1: {
+      fontSize: '0.85rem',
+    },
+    body2: {
+      fontSize: '0.78rem',
+    },
+    caption: {
+      fontSize: '0.7rem',
+    },
+    button: {
+      fontSize: '0.78rem',
+    },
   },
   shape: {
     borderRadius: 8,

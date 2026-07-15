@@ -213,6 +213,24 @@ const AIChat: React.FC = () => {
     };
   };
 
+  const getUpdatedFollowUpsText = (text: string, oldHcpName: string, newHcpName: string): string => {
+    if (!text || !oldHcpName || !newHcpName || oldHcpName.toLowerCase() === newHcpName.toLowerCase()) {
+      return text;
+    }
+    const cleanOld = oldHcpName.replace(/^Dr\.\s*/i, '').replace(/^Dr\s*/i, '').trim();
+    const cleanNew = newHcpName.replace(/^Dr\.\s*/i, '').replace(/^Dr\s*/i, '').trim();
+    const oldLast = cleanOld.split(' ').pop() || '';
+    const newLast = cleanNew.split(' ').pop() || '';
+
+    let updatedText = text.replace(new RegExp(oldHcpName, 'gi'), newHcpName);
+    updatedText = updatedText.replace(new RegExp(cleanOld, 'gi'), cleanNew);
+    if (oldLast && newLast && oldLast.toLowerCase() !== newLast.toLowerCase()) {
+      const escapedOldLast = oldLast.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      updatedText = updatedText.replace(new RegExp('\\b' + escapedOldLast + '\\b', 'gi'), newLast);
+    }
+    return updatedText;
+  };
+
   const handleSend = async () => {
     if (isRecording && recognitionRef.current) {
       recognitionRef.current.stop();
@@ -251,8 +269,14 @@ const AIChat: React.FC = () => {
         const hcpPendingName = data?.hcp?.pending_name;
 
         if (!hcpPendingName && !hasAmbiguousCandidates) {
-          // Apply the form update right away
-          dispatch(updateForm(formStatePayload));
+          let finalPayload = { ...formStatePayload };
+          const oldHcpName = formState.hcp?.name;
+          const newHcpName = formStatePayload.hcp?.name;
+          
+          if (oldHcpName && newHcpName) {
+            finalPayload.followUpsText = getUpdatedFollowUpsText(formState.followUpsText, oldHcpName, newHcpName);
+          }
+          dispatch(updateForm(finalPayload));
         }
 
         // Show compact field-change summary instead of full extraction preview
@@ -343,11 +367,16 @@ const AIChat: React.FC = () => {
 
       if (data) {
         const formStatePayload = buildFormPayload(data);
-        // Now the HCP is confirmed — update the form including HCP
-        dispatch(updateForm({
+        const oldHcpName = formState.hcp?.name;
+        let finalPayload = {
           ...formStatePayload,
           hcp: { id: candidate.id, name: candidate.name }
-        }));
+        };
+        if (oldHcpName && candidate.name) {
+          finalPayload.followUpsText = getUpdatedFollowUpsText(formState.followUpsText, oldHcpName, candidate.name);
+        }
+        // Now the HCP is confirmed — update the form including HCP
+        dispatch(updateForm(finalPayload));
 
         dispatch(addMessage({
           id: (Date.now() + 2).toString(),
@@ -355,16 +384,21 @@ const AIChat: React.FC = () => {
           text: '',
           timestamp: new Date().toISOString(),
           isExtractionPreview: true,
-          extractionData: { ...formStatePayload, hcp: { id: candidate.id, name: candidate.name } },
+          extractionData: finalPayload,
           rawBackendData: data,
           isAccepted: false,
         }));
       } else {
-        // No new enrichment data — just update HCP in form from the candidate
-        dispatch(updateForm({
+        const oldHcpName = formState.hcp?.name;
+        let finalPayload = {
           ...extractionData,
           hcp: { id: candidate.id, name: candidate.name }
-        }));
+        };
+        if (oldHcpName && candidate.name) {
+          finalPayload.followUpsText = getUpdatedFollowUpsText(formState.followUpsText, oldHcpName, candidate.name);
+        }
+        // No new enrichment data — just update HCP in form from the candidate
+        dispatch(updateForm(finalPayload));
       }
     } catch (error) {
       console.error(error);

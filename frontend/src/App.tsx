@@ -16,11 +16,11 @@ const App: React.FC = () => {
       </AppBar>
 
       {/* Main Content Area */}
-      <Container maxWidth={false} sx={{ flexGrow: 1, p: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, height: '100%', m: 0, width: '100%' }}>
+      <Box sx={{ flexGrow: 1, p: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden', width: '100%', maxWidth: '100%' }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, height: '100%', m: 0, width: '100%' }}>
           
           {/* Left Panel: Structured Interaction Form */}
-          <Box sx={{ flex: '1 1 50%', height: '100%', minWidth: '300px', pb: 2 }}>
+          <Box sx={{ flex: '1 1 55%', height: '100%', minWidth: '300px', pb: 1 }}>
             <Paper 
               elevation={2} 
               sx={{ 
@@ -31,7 +31,7 @@ const App: React.FC = () => {
                 border: '1px solid #e0e0e0'
               }}
             >
-              <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#fafafa' }}>
+              <Box sx={{ p: 1.5, borderBottom: '1px solid #e0e0e0', bgcolor: '#fafafa' }}>
                 <Typography variant="h6" sx={{ fontWeight: 'bold' }} color="text.primary">
                   Interaction Details
                 </Typography>
@@ -39,14 +39,14 @@ const App: React.FC = () => {
                   Review and save interaction log.
                 </Typography>
               </Box>
-              <Box sx={{ p: 2, flexGrow: 1, overflowY: 'auto' }}>
+              <Box sx={{ p: 1.5, flexGrow: 1, overflowY: 'auto' }}>
                 <InteractionForm />
               </Box>
             </Paper>
           </Box>
 
           {/* Right Panel: AI Chat Assistant */}
-          <Box sx={{ flex: '1 1 40%', height: '100%', minWidth: '300px', pb: 2 }}>
+          <Box sx={{ flex: '1 1 40%', height: '100%', minWidth: '300px', pb: 1 }}>
             <Paper 
               elevation={2} 
               sx={{ 
@@ -57,7 +57,7 @@ const App: React.FC = () => {
                 border: '1px solid #e0e0e0',
               }}
             >
-              <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#f3e5f5' }}>
+              <Box sx={{ p: 1.5, borderBottom: '1px solid #e0e0e0', bgcolor: '#f3e5f5' }}>
                 <Typography variant="h6" sx={{ fontWeight: 'bold' }} color="secondary.main">
                   AI Assistant
                 </Typography>
@@ -72,10 +72,10 @@ const App: React.FC = () => {
           </Box>
 
         </Box>
-      </Container>
+      </Box>
 
       {/* Footer */}
-      <Box sx={{ p: 1.5, bgcolor: 'background.paper', borderTop: '1px solid #e0e0e0', textAlign: 'center' }}>
+      <Box sx={{ p: 1, bgcolor: 'background.paper', borderTop: '1px solid #e0e0e0', textAlign: 'center' }}>
         <Typography variant="body2" color="text.secondary">
           Status: Ready to log interactions
         </Typography>

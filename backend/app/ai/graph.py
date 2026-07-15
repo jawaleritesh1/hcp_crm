@@ -520,17 +520,53 @@ def edit_interaction_node(state: GraphState):
             if (not new_attendees or new_attendees.lower() in ["none", "null", ""]) and resolved_dict.get("attendees"):
                 new_attendees = resolved_dict.get("attendees")
             
-            # Ensure HCP Name and Ritesh are in Attendees
+            # Remove old HCP names from attendees if they differ from the new HCP name
+            import re
+            old_hcp_name = old_hcp.get("name", "")
+            old_pending_name = old_hcp.get("pending_name", "")
+            new_hcp_name = payload.get("hcp", {}).get("name", "") if payload.get("hcp") else payload.get("hcp_name", "")
+            
+            # If the user requested to change the HCP name, use the new requested name as active, otherwise fallback to old/resolved name
             resolved_hcp_name = resolved.get("hcp", {}).get("name", "")
-            if resolved_hcp_name:
+            active_hcp_name = new_hcp_name if (new_hcp_name and new_hcp_name.strip() and new_hcp_name.lower() != old_hcp_name.lower()) else resolved_hcp_name
+            
+            if new_attendees and active_hcp_name:
+                names_to_remove = []
+                if old_hcp_name and old_hcp_name.lower() != active_hcp_name.lower():
+                    names_to_remove.append(old_hcp_name)
+                    no_dr_old = re.sub(r'^Dr\.\s*', '', old_hcp_name, flags=re.IGNORECASE)
+                    if no_dr_old:
+                        names_to_remove.append(no_dr_old)
+                if old_pending_name and old_pending_name.lower() != active_hcp_name.lower():
+                    names_to_remove.append(old_pending_name)
+                    no_dr_pending = re.sub(r'^Dr\.\s*', '', old_pending_name, flags=re.IGNORECASE)
+                    if no_dr_pending:
+                        names_to_remove.append(no_dr_pending)
+                
+                parts = [x.strip() for x in new_attendees.split(",") if x.strip()]
+                cleaned_parts = []
+                for part in parts:
+                    should_remove = False
+                    for name in names_to_remove:
+                        clean_part = part.lower().replace("dr.", "").strip()
+                        clean_name = name.lower().replace("dr.", "").strip()
+                        if clean_name == clean_part or part.lower() == name.lower() or part.lower().endswith(name.lower()):
+                            should_remove = True
+                            break
+                    if not should_remove:
+                        cleaned_parts.append(part)
+                new_attendees = ", ".join(cleaned_parts)
+            
+            # Ensure active HCP Name and Ritesh are in Attendees
+            if active_hcp_name:
                 if not new_attendees:
-                    new_attendees = f"Ritesh, {resolved_hcp_name}"
+                    new_attendees = f"Ritesh, {active_hcp_name}"
                 else:
                     if "ritesh" not in new_attendees.lower():
                         new_attendees = f"Ritesh, {new_attendees}"
-                    if resolved_hcp_name.lower() not in new_attendees.lower():
+                    if active_hcp_name.lower() not in new_attendees.lower():
                         # Append the doctor's name cleanly
-                        new_attendees = f"{new_attendees}, {resolved_hcp_name}"
+                        new_attendees = f"{new_attendees}, {active_hcp_name}"
             else:
                 if new_attendees and "ritesh" not in new_attendees.lower():
                     new_attendees = f"Ritesh, {new_attendees}"
@@ -585,10 +621,39 @@ def edit_interaction_node(state: GraphState):
                     new_samps = [{"name": p.get("name")} for p in resolved_dict.get("samples_distributed", [])]
             resolved["samples_distributed"] = map_new_products(new_samps, resolved_dict.get("samples_distributed", []))
             
-            follow_ups = payload.get("follow_ups", state.get("follow_ups", []))
-            
+            # Programmatic replacement of old doctor names in textual fields as a fallback
             old_hcp_name = old_hcp.get("name", "")
+            old_pending_name = old_hcp.get("pending_name", "")
             resolved_hcp_name = resolved.get("hcp", {}).get("name", "")
+            
+            def replace_doctor_names(text):
+                if not text or not old_hcp_name or not active_hcp_name:
+                    return text
+                t = re.sub(re.escape(old_hcp_name), active_hcp_name, text, flags=re.IGNORECASE)
+                if old_pending_name:
+                    t = re.sub(re.escape(old_pending_name), active_hcp_name, t, flags=re.IGNORECASE)
+                old_last = old_hcp_name.split()[-1] if len(old_hcp_name.split()) > 0 else ""
+                new_last = active_hcp_name.split()[-1] if len(active_hcp_name.split()) > 0 else ""
+                old_last_clean = old_last.replace("Dr.", "").replace("Dr", "").strip()
+                new_last_clean = new_last.replace("Dr.", "").replace("Dr", "").strip()
+                if old_last_clean and new_last_clean and old_last_clean.lower() != new_last_clean.lower():
+                    pattern = re.compile(r'\b' + re.escape(old_last_clean) + r'\b', re.IGNORECASE)
+                    t = pattern.sub(new_last_clean, t)
+                return t
+
+            resolved["topics_discussed"] = replace_doctor_names(resolved.get("topics_discussed", ""))
+            resolved["outcomes"] = replace_doctor_names(resolved.get("outcomes", ""))
+            
+            follow_ups_raw = payload.get("follow_ups", state.get("follow_ups", []))
+            follow_ups = []
+            for fu in follow_ups_raw:
+                follow_ups.append({
+                    "action_item": replace_doctor_names(fu.get("action_item", "")),
+                    "priority": fu.get("priority", "Medium"),
+                    "due_date": fu.get("due_date"),
+                    "reason": replace_doctor_names(fu.get("reason", ""))
+                })
+            
             if resolved_hcp_name and resolved_hcp_name != old_hcp_name:
                 explanation = f"Form updated: HCP changed to {resolved_hcp_name}."
             else:
