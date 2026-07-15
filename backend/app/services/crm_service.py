@@ -35,7 +35,7 @@ class CRMService:
             raise HTTPException(status_code=404, detail="HCP not found")
         
         # Validate all products exist
-        all_product_ids = obj_in.materials_shared + obj_in.samples_distributed
+        all_product_ids = list(dict.fromkeys(obj_in.materials_shared + obj_in.samples_distributed))  # deduplicated
         for prod_id in all_product_ids:
             if not product_repo.get(db, id=prod_id):
                 raise HTTPException(status_code=404, detail=f"Product {prod_id} not found")

@@ -53,7 +53,12 @@ def create_interaction(
     interaction_in: InteractionCreate,
     db: Session = Depends(get_db)
 ):
-    return crm_service.create_interaction(db, obj_in=interaction_in)
+    try:
+        return crm_service.create_interaction(db, obj_in=interaction_in)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 from app.schemas.schemas import AIProcessRequest, AIProcessResponse, FollowUpChecklistItem, FollowUpStatusUpdate
 from app.ai.graph_service import graph_service
